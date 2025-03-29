@@ -6,6 +6,7 @@ RUN apt-get update && \
     tk-dev \
     python3-pip \
     libagg-dev \
+    ffmpeg \
     libgl1-mesa-glx \
     libglib2.0-0
     
