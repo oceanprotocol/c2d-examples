@@ -5,7 +5,9 @@ RUN apt-get update && \
     python3-tk \
     tk-dev \
     python3-pip \
-    libagg-dev
+    libagg-dev \
+    libgl1-mesa-glx \
+    libglib2.0-0
     
 COPY requirements.txt /tmp/
 RUN pip install wheel
