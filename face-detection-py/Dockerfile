@@ -9,7 +9,7 @@ RUN apt-get update && \
     libagg-dev \
     libgl1-mesa-glx \
     libglib2.0-0 \
-    ffmpeg=7:7.1.1-1ubuntu1 \
+    ffmpeg=7.1.1-1ubuntu1 \
     && apt-get clean
 
 COPY requirements.txt /tmp/
