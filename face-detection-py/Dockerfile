@@ -48,6 +48,7 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
     libxvidcore-dev \
     libzmq3-dev \
     libzimg-dev \
+    libgtest-dev \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Set Clang as default compiler
