@@ -22,7 +22,6 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
     libvpx-dev \
     libsvtav1-dev \
     libaom-dev \
-    libfdk-aac-dev \
     libass-dev \
     libbluray-dev \
     libdav1d-dev \
@@ -31,7 +30,6 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
     frei0r-plugins-dev \
     libgnutls28-dev \
     libmp3lame-dev \
-    libopenjpeg-dev \
     libopus-dev \
     librav1e-dev \
     librist-dev \
