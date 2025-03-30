@@ -54,6 +54,14 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
 ENV CC=clang
 ENV CXX=clang++
 
+RUN git clone --depth=1 https://github.com/nkoriyama/aribb24 /aribb24 && \
+    cd /aribb24 && \
+    ./bootstrap && \
+    ./configure --prefix=/usr/local && \
+    make -j$(nproc) && \
+    make install && \
+    cd .. && rm -rf /aribb24
+
 # Build and Install FFmpeg (latest version)
 RUN git clone --depth=1 https://git.ffmpeg.org/ffmpeg.git /ffmpeg && \
     cd /ffmpeg && \
