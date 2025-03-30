@@ -48,8 +48,6 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
     libxvidcore-dev \
     libzmq3-dev \
     libzimg-dev \
-    libgtest-dev \
-    libhwy-dev \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Set Clang as default compiler
@@ -63,14 +61,6 @@ RUN git clone --depth=1 https://github.com/nkoriyama/aribb24 /aribb24 && \
     make -j$(nproc) && \
     make install && \
     cd .. && rm -rf /aribb24
-
-RUN git clone --depth=1 https://github.com/libjxl/libjxl.git /libjxl && \
-    cd /libjxl && \
-    mkdir build && cd build && \
-    cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local && \
-    make -j$(nproc) && \
-    make install && \
-    cd ../.. && rm -rf /libjxl
 
 # Build and Install FFmpeg (latest version)
 RUN git clone --depth=1 https://git.ffmpeg.org/ffmpeg.git /ffmpeg && \
@@ -91,7 +81,6 @@ RUN git clone --depth=1 https://git.ffmpeg.org/ffmpeg.git /ffmpeg && \
     --enable-libbluray \
     --enable-libdav1d \
     --enable-libharfbuzz \
-    --enable-libjxl \
     --enable-libmp3lame \
     --enable-libopus \
     --enable-librav1e \
