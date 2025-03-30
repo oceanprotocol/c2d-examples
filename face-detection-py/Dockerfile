@@ -65,7 +65,7 @@ RUN git clone --depth=1 https://github.com/nkoriyama/aribb24 /aribb24 && \
 RUN git clone --depth=1 https://github.com/libjxl/libjxl.git /libjxl && \
     cd /libjxl && \
     mkdir build && cd build && \
-    cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local -DJXL_TESTING=OFF && \
     make -j$(nproc) && \
     make install && \
     cd ../.. && rm -rf /libjxl
