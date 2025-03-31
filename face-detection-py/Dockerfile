@@ -1,4 +1,4 @@
-FROM python:3.8
+FROM ubuntu:24.04
 
 RUN apt-get update && \
     apt-get install -y \
@@ -6,12 +6,16 @@ RUN apt-get update && \
     tk-dev \
     clang \
     python3-pip \
+    python3-venv \
     libagg-dev \
-    libgl1-mesa-glx \
+    libgl1 \
     libglib2.0-0 \
     ffmpeg \
     && apt-get clean
 
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
 COPY requirements.txt /tmp/
-RUN pip install wheel
+RUN pip install --upgrade pip wheel
 RUN pip install -r /tmp/requirements.txt
