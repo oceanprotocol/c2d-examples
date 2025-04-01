@@ -3,7 +3,7 @@ matplotlib
 reportlab
 opencv-python
 requests
-Pillow==8.3.2
+Pillow
 SQLAlchemy
 numpy
 pandas
