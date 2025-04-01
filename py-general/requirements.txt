@@ -1,0 +1,6 @@
+web3
+matplotlib
+reportlab
+opencv-python
+requests
+Pillow==8.3.2
