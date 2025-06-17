@@ -7,3 +7,9 @@ Pillow
 SQLAlchemy
 numpy
 pandas
+keras
+tensorflow
+yolov5
+albumentations
+plotly
+keras-unet-collection
