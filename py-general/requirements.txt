@@ -7,3 +7,5 @@ Pillow
 SQLAlchemy
 numpy
 pandas
+tensorflow
+torch
