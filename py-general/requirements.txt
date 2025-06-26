@@ -13,3 +13,4 @@ yolov5
 albumentations
 plotly
 keras-unet-collection
+torch
