@@ -1,30 +1,37 @@
 import io
 import os
+import json
 import zipfile
+from datetime import datetime
 from urllib.parse import urlparse, unquote
 
 import cv2
+import h5py
 import numpy as np
 import tensorflow as tf
 import keras.backend as K
+from keras import Input, Model
 from keras.optimizers import *
 from keras.metrics import *
-from keras.models import load_model
+from keras.models import load_model, model_from_json, save_model
 from keras.callbacks import ModelCheckpoint, CSVLogger
+from keras.src.applications.resnet import ResNet50
 from keras_unet_collection.models import unet_2d as unet_2d
 import requests
 
 datasets_urls = [
-    # URLs for datasets
+    "" # Define URLs for datasets
 ]
 
 models_urls = [
-    # URLs for models
+    "" # Define URLs for models
 ]
 
 tf.test.is_built_with_cuda()
 SAVE_RESULTS_DIR = "/data/outputs/"
-BACKBONE = 'DenseNet201'
+# SAVE_RESULTS_DIR = "./results"
+# BACKBONE = 'DenseNet201'
+BACKBONE = "ResNet50V2"
 LEARNING_RATE = 1e-3
 INPUT_SHAPE = (512, 512, 3) # RGB image
 NUM_CLASSES = 2 # background and damage
@@ -53,13 +60,13 @@ def download_datasets():
                     print(f"Extracted into new folder: {target_dir}")
 
 def download_models():
-    # for url in models_urls:
     response = requests.get(models_urls[0], stream=True) # for the moment test c2d with one model
     if response.status_code == 200:
         with open("kaggle_model.h5", 'wb') as f:
             for chunk in response.iter_content(chunk_size=8192):
                 f.write(chunk)
         print(f"Downloaded kaggle_model.h5 from '{models_urls[0]}'.")
+
 
 def generator_v2(*dataset_dirs, batch_size, augmentation=None, **kwargs):
     assert batch_size > 0, "The batch size must be greater than 0"
@@ -74,11 +81,16 @@ def generator_v2(*dataset_dirs, batch_size, augmentation=None, **kwargs):
 
     # get the list of all images
     images_paths = []
+    print(f"Dataset dirs: {dataset_dirs}")
     for dataset_dir in dataset_dirs:
+        print(f"Dataset dir: {dataset_dir}")
         current_images_dir = os.path.join(dataset_dir, 'images')
+        print(f"Current image dir: {current_images_dir}")
         current_dir_images_filenames = os.listdir(current_images_dir)
+        print(f"Current image dir filenames: {current_dir_images_filenames}")
         current_dir_images_paths = [os.path.join(current_images_dir, f) for f in current_dir_images_filenames]
         current_dir_images_paths = list(filter(lambda x: x.endswith(('.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.gif')), current_dir_images_paths))
+        print(f"Current image dir paths: {current_dir_images_paths}")
         images_paths += current_dir_images_paths
 
     def to_categorical(mask, num_classes=2):
@@ -88,49 +100,52 @@ def generator_v2(*dataset_dirs, batch_size, augmentation=None, **kwargs):
 
     images = []
     masks = []
-    while True:
-        for image_path in images_paths:
+    print(f"Generating {len(images_paths)} images...")
+    print(f"Images paths: {images_paths}")
+    # while True:
+    for image_path in images_paths:
+        assert os.path.exists(image_path), f"The image path: {image_path} does not exist"
 
-            mask_path = image_path.replace('images', 'masks').split(".")[0] + ".png"
+        mask_path = image_path.replace('images', 'masks').rsplit('.', 1)[0] + '.png'
+        print(f"Generating gmask paths {mask_path}...")
 
-            assert os.path.exists(image_path), f"The image path: {image_path} does not exist"
-            assert os.path.exists(mask_path), f"The mask path: {mask_path} does not exist"
+        assert os.path.exists(mask_path), f"The mask path: {mask_path} does not exist"
 
-            image = cv2.imread(image_path, cv2.IMREAD_COLOR)
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
+        image = cv2.imread(image_path, cv2.IMREAD_COLOR)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
 
-            if augmentation is not None:
-                sample = augmentation(image=image, mask=mask)
-                image = sample['image']
-                mask = sample['mask']
+        if augmentation is not None:
+            sample = augmentation(image=image, mask=mask)
+            image = sample['image']
+            mask = sample['mask']
 
-            image = np.asarray(image, dtype=np.float32) / 255.0
-            mask[mask > 0] = 1
+        image = np.asarray(image, dtype=np.float32) / 255.0
+        mask[mask > 0] = 1
 
-            mask = to_categorical(mask)
-            mask = np.asarray(mask, dtype=np.float32)
+        mask = to_categorical(mask)
+        mask = np.asarray(mask, dtype=np.float32)
 
-            # resize the image and the mask
-            image = cv2.resize(image, resize, interpolation=cv2.INTER_NEAREST)
-            mask = cv2.resize(mask, resize, interpolation=cv2.INTER_NEAREST)
+        # resize the image and the mask
+        image = cv2.resize(image, resize, interpolation=cv2.INTER_NEAREST)
+        mask = cv2.resize(mask, resize, interpolation=cv2.INTER_NEAREST)
 
-            images.append(image)
-            masks.append(mask)
+        images.append(image)
+        masks.append(mask)
 
-            if len(images) == batch_size:
+        if len(images) == batch_size:
 
-                if std is not None and mean is not None:
-                    images = np.asarray(images, dtype=np.float32)
-                    images = (images - mean) / std
-
+            if std is not None and mean is not None:
                 images = np.asarray(images, dtype=np.float32)
-                masks = np.asarray(masks, dtype=np.float32)
+                images = (images - mean) / std
 
-                yield images, masks
+            images = np.asarray(images, dtype=np.float32)
+            masks = np.asarray(masks, dtype=np.float32)
 
-                images = []
-                masks = []
+            yield images, masks
+
+            images = []
+            masks = []
 
 def custom_focal_tversky(num_classes, alpha=0.5, gamma=4/3, const=K.epsilon()):
     def custom_tversky_coef(y_true, y_pred):
@@ -179,9 +194,13 @@ def get_checkpoints(save_name, save_format):
 
     saved_model_path = os.path.join(models_folder, f"{save_name}.{save_format}")
     saved_scores_path = os.path.join(scores_folder, f"{save_name}.csv")
+    print(f"Saving model to {saved_model_path}...")
+    print(f"Saving scores to {saved_scores_path}...")
 
-    save_last_checkpoint = ModelCheckpoint(saved_model_path, verbose=1, save_best_only=False, save_weights_only=False, mode='auto', save_freq="epoch", save_format=save_format)
+    save_last_checkpoint = ModelCheckpoint(saved_model_path, verbose=1, save_best_only=False, save_weights_only=False, mode='auto', save_freq="epoch")
+    print(f"Saving last checkpoint to {save_last_checkpoint}...")
     csv_logger = CSVLogger(saved_scores_path, append=True)
+    print(f"Saving csv_logger to {csv_logger}...")
 
     return [save_last_checkpoint, csv_logger]
 
@@ -199,44 +218,88 @@ def init_model(input_shape=INPUT_SHAPE, num_classes=NUM_CLASSES, learning_rate=L
     model.compile(optimizer=optimizer, loss=loss, metrics=['accuracy', OneHotMeanIoU(num_classes=num_classes)])
     return model
 
+# def test(model_path, test_dir, num_classes, num_images=None, max_num_images_per_line=4, std=None, mean=None):
+#     model = load_model(model_path,
+#         custom_objects={'multi_class_focal_tversky_loss': custom_focal_tversky(num_classes=num_classes)
+#         })
+#
+#     images_paths = [os.path.join(test_dir, image_filename) for image_filename in os.listdir(test_dir)]
+#     num_images = num_images if num_images is not None and num_images < len(images_paths) else len(images_paths)
+#     images_paths = images_paths[:num_images]
+#
+#     resize = (model.input_shape[1], model.input_shape[2])
+#
+#     images = []
+#     masks = []
+#     for image_path in images_paths:
+#         if not image_path.endswith(('.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.gif')):
+#             continue
+#
+#         assert os.path.exists(image_path), f"The image path: {image_path} does not exist"
+#
+#         image = cv2.imread(image_path, cv2.IMREAD_COLOR)
+#         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+#         image = np.asarray(image, dtype=np.float32) / 255.0
+#         image = cv2.resize(image, resize, interpolation=cv2.INTER_NEAREST)
+#         image = np.asarray(image, dtype=np.float32)
+#
+#         if std is not None and mean is not None:
+#             image = (image - mean) / std
+#
+#         image = np.expand_dims(image, 0)
+#         pred = model.predict_on_batch(image)[0]
+#
+#         images.append(image[0])
+#         masks.append(pred)
+
+
 def test(model_path, test_dir, num_classes, num_images=None, max_num_images_per_line=4, std=None, mean=None):
     model = load_model(model_path,
         custom_objects={'multi_class_focal_tversky_loss': custom_focal_tversky(num_classes=num_classes)
-        })
-
+        }, compile=False)
+    print(f"Finished loading model: {model}")
     images_paths = [os.path.join(test_dir, image_filename) for image_filename in os.listdir(test_dir)]
     num_images = num_images if num_images is not None and num_images < len(images_paths) else len(images_paths)
     images_paths = images_paths[:num_images]
 
     resize = (model.input_shape[1], model.input_shape[2])
 
-    images = []
-    masks = []
-    for image_path in images_paths:
+    # Ensure output dir exists
+    os.makedirs(SAVE_RESULTS_DIR, exist_ok=True)
+
+    for idx, image_path in enumerate(images_paths):
         if not image_path.endswith(('.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.gif')):
             continue
 
         assert os.path.exists(image_path), f"The image path: {image_path} does not exist"
 
         image = cv2.imread(image_path, cv2.IMREAD_COLOR)
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        image = np.asarray(image, dtype=np.float32) / 255.0
-        image = cv2.resize(image, resize, interpolation=cv2.INTER_NEAREST)
-        image = np.asarray(image, dtype=np.float32)
+        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image_input = np.asarray(image_rgb, dtype=np.float32) / 255.0
+        image_input = cv2.resize(image_input, resize, interpolation=cv2.INTER_NEAREST)
 
         if std is not None and mean is not None:
-            image = (image - mean) / std
+            image_input = (image_input - mean) / std
 
-        image = np.expand_dims(image, 0)
-        pred = model.predict_on_batch(image)[0]
+        image_input = np.expand_dims(image_input, 0)
+        pred = model.predict_on_batch(image_input)[0]
 
-        images.append(image[0])
-        masks.append(pred)
+        # Get the predicted mask (argmax across classes)
+        pred_mask = np.argmax(pred, axis=-1).astype(np.uint8)
+        pred_mask = (pred_mask * 255).astype(np.uint8)  # scale for saving
+
+        # Save predicted mask image
+        base_filename = os.path.basename(image_path).split('.')[0]
+        output_path = os.path.join(SAVE_RESULTS_DIR, f"{base_filename}_pred.png")
+        cv2.imwrite(output_path, pred_mask)
+        print(f"Saved prediction to: {output_path}")
 
 def evaluate(model_path, test_dir, num_classes, batch_size=5, std=None, mean=None):
+    print(f"Evaluate model... {model_path}")
+    focal_tversky_loss = custom_focal_tversky(num_classes=num_classes)
     model = load_model(model_path,
-        custom_objects={'multi_class_focal_tversky_loss': custom_focal_tversky(num_classes=num_classes)
-        })
+        custom_objects={'multi_class_focal_tversky_loss': focal_tversky_loss
+        }, compile=False)
 
     generator = generator_v2(test_dir, batch_size=batch_size, std=std, mean=mean)
 
@@ -248,6 +311,9 @@ def evaluate(model_path, test_dir, num_classes, batch_size=5, std=None, mean=Non
     scores_dict = {}
     for i in range(len(model.metrics_names)):
         scores_dict[model.metrics_names[i]] = scores[i]
+
+start_time = datetime.now()
+print("Start time:", start_time)
 
 #Downloads prerequisites
 download_datasets()
@@ -261,13 +327,17 @@ kaggle_model.summary()
 kaggle_path = './Kaggle Dataset'
 BATCH_SIZE = 5
 # init generator
+print('Initiate generator v2...')
 generator = generator_v2(kaggle_path, batch_size=BATCH_SIZE, std=[0.229, 0.224, 0.225], mean=[0.485, 0.456, 0.406])
 
-EPOCHS = 50
+EPOCHS = 7
 STEPS_PER_EPOCH = len(os.listdir(os.path.join(kaggle_path, 'images'))) // BATCH_SIZE
 
 save_format = 'h5'
 save_name = 'kaggle_model'
+
+print(f'Start training model {save_name} with format {save_format}...')
+print(f'Number of epochs: {EPOCHS} and steps per epoch {STEPS_PER_EPOCH}')
 
 history = kaggle_model.fit(
         generator,
@@ -278,11 +348,67 @@ history = kaggle_model.fit(
         epochs=EPOCHS,
         callbacks=get_checkpoints(save_name, save_format))
 
-test_dir = 'Insure Validation Dataset/images'
+# test_dir = 'Insure Validation Dataset/images'
+test_dir = os.path.join(SAVE_RESULTS_DIR)
 # To use your trained model, uncomment the first line starting with 'model_path' and comment the second
 # model_path = os.path.join(os.path.join(SAVE_RESULTS_DIR, 'models'), 'kaggle_model.h5')
-model_path = os.path.join('.', 'kaggle_model.h5')
-assert os.path.exists(model_path), "Model not found at path!"
 
-evaluate(model_path, 'Insure Validation Dataset', num_classes=2, batch_size=5, mean=np.array([0.485, 0.456, 0.406]), std=np.array([0.229, 0.224, 0.225]))
-test(model_path, test_dir, num_classes=2, num_images=16, max_num_images_per_line=4, mean=np.array([0.485, 0.456, 0.406]), std=np.array([0.229, 0.224, 0.225]))
+
+model_path = os.path.join('.', 'kaggle_model.h5')
+print(f"model_path: {model_path}")
+assert os.path.exists(model_path), "Model not found at path!"
+output_path = os.path.join('.', 'ouput_model.h5')
+
+
+print(f"Testing model: {model_path}")
+
+def sanitize_layer_names(model_path, output_path):
+        # Step 1: Read and sanitize model config
+    with h5py.File(model_path, 'r') as f:
+        if 'model_config' not in f.attrs:
+            raise ValueError("model_config not found in HDF5 file.")
+
+        raw_config = f.attrs['model_config']
+        config_dict = json.loads(raw_config)
+
+        # Recursively sanitize layer names
+        def sanitize_config(obj):
+            if isinstance(obj, dict):
+                for k, v in obj.items():
+                    if k == 'name' and isinstance(v, str) and '/' in v:
+                        obj[k] = v.replace('/', '_')
+                    else:
+                        sanitize_config(v)
+            elif isinstance(obj, list):
+                for item in obj:
+                    sanitize_config(item)
+
+        sanitize_config(config_dict)
+
+    # Step 2: Rebuild model from sanitized config
+    print("Rebuilding model with sanitized layer names...")
+    focal_tversky_loss = custom_focal_tversky(num_classes=2)
+    custom_objects = {'multi_class_focal_tversky_loss': focal_tversky_loss}
+    model = model_from_json(json.dumps(config_dict), custom_objects=custom_objects)
+
+    # Step 3: Load weights manually
+    print("Loading weights...")
+    with h5py.File(model_path, 'r') as f:
+        model.load_weights(f)
+
+    # Step 4: Save sanitized model
+    print(f"Saving sanitized model to: {output_path}")
+    save_model(model, output_path, save_format='h5')
+    print("Sanitized model saved successfully.")
+
+sanitize_layer_names(model_path, output_path)
+
+evaluate(output_path, 'InsureValDataset', num_classes=2, batch_size=5, mean=np.array([0.485, 0.456, 0.406]), std=np.array([0.229, 0.224, 0.225]))
+test(output_path, test_dir, num_classes=2, num_images=16, max_num_images_per_line=4, mean=np.array([0.485, 0.456, 0.406]), std=np.array([0.229, 0.224, 0.225]))
+
+end_time = datetime.now()
+print("End time:", end_time)
+
+# Delta
+delta = end_time - start_time
+print("Duration:", delta)
