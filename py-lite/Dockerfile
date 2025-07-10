@@ -4,6 +4,9 @@ RUN apt-get update && \
     apt-get install -y \
     python3-pip \
     python3-venv \
+    libgl1 \
+    libglib2.0-0 \
+    ffmpeg \
     && apt-get clean
 
 RUN python3 -m venv /opt/venv
