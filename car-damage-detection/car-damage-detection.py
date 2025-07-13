@@ -265,7 +265,8 @@ def test(model_path, test_dir, num_classes, num_images=None, max_num_images_per_
     resize = (model.input_shape[1], model.input_shape[2])
 
     # Ensure output dir exists
-    os.makedirs(SAVE_RESULTS_DIR, exist_ok=True)
+    output_dir = SAVE_RESULTS_DIR + '/pred'
+    os.makedirs(output_dir, exist_ok=True)
 
     for idx, image_path in enumerate(images_paths):
         if not image_path.endswith(('.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.gif')):
@@ -290,7 +291,7 @@ def test(model_path, test_dir, num_classes, num_images=None, max_num_images_per_
 
         # Save predicted mask image
         base_filename = os.path.basename(image_path).split('.')[0]
-        output_path = os.path.join(SAVE_RESULTS_DIR, f"{base_filename}_pred.png")
+        output_path = os.path.join(output_dir, f"{base_filename}_pred.png")
         cv2.imwrite(output_path, pred_mask)
         print(f"Saved prediction to: {output_path}")
 
@@ -304,6 +305,11 @@ def evaluate(model_path, test_dir, num_classes, batch_size=5, std=None, mean=Non
     generator = generator_v2(test_dir, batch_size=batch_size, std=std, mean=mean)
 
     eval_steps = len(os.listdir(os.path.join(test_dir, 'images'))) // batch_size
+    optimizer = Adam(learning_rate=LEARNING_RATE)
+    loss = custom_focal_tversky(num_classes=num_classes)
+
+    # compile the model
+    model.compile(optimizer=optimizer, loss=loss, metrics=['accuracy', OneHotMeanIoU(num_classes=num_classes)])
 
     scores = model.evaluate(generator, steps=eval_steps, verbose=1)
 
@@ -348,63 +354,63 @@ history = kaggle_model.fit(
         epochs=EPOCHS,
         callbacks=get_checkpoints(save_name, save_format))
 
-# test_dir = 'Insure Validation Dataset/images'
-test_dir = os.path.join(SAVE_RESULTS_DIR)
+test_dir = 'InsureValDataset/images'
 # To use your trained model, uncomment the first line starting with 'model_path' and comment the second
 # model_path = os.path.join(os.path.join(SAVE_RESULTS_DIR, 'models'), 'kaggle_model.h5')
 
 
+# print("Model converted and saved as kaggle_model.keras")
 model_path = os.path.join('.', 'kaggle_model.h5')
 print(f"model_path: {model_path}")
 assert os.path.exists(model_path), "Model not found at path!"
-output_path = os.path.join('.', 'ouput_model.h5')
+# output_path = os.path.join('.', 'ouput_model.h5')
 
 
 print(f"Testing model: {model_path}")
 
-def sanitize_layer_names(model_path, output_path):
-        # Step 1: Read and sanitize model config
-    with h5py.File(model_path, 'r') as f:
-        if 'model_config' not in f.attrs:
-            raise ValueError("model_config not found in HDF5 file.")
+# def sanitize_layer_names(model_path, output_path):
+#         # Step 1: Read and sanitize model config
+#     with h5py.File(model_path, 'r') as f:
+#         if 'model_config' not in f.attrs:
+#             raise ValueError("model_config not found in HDF5 file.")
 
-        raw_config = f.attrs['model_config']
-        config_dict = json.loads(raw_config)
+#         raw_config = f.attrs['model_config']
+#         config_dict = json.loads(raw_config)
 
-        # Recursively sanitize layer names
-        def sanitize_config(obj):
-            if isinstance(obj, dict):
-                for k, v in obj.items():
-                    if k == 'name' and isinstance(v, str) and '/' in v:
-                        obj[k] = v.replace('/', '_')
-                    else:
-                        sanitize_config(v)
-            elif isinstance(obj, list):
-                for item in obj:
-                    sanitize_config(item)
+#         # Recursively sanitize layer names
+#         def sanitize_config(obj):
+#             if isinstance(obj, dict):
+#                 for k, v in obj.items():
+#                     if k == 'name' and isinstance(v, str) and '/' in v:
+#                         obj[k] = v.replace('/', '_')
+#                     else:
+#                         sanitize_config(v)
+#             elif isinstance(obj, list):
+#                 for item in obj:
+#                     sanitize_config(item)
 
-        sanitize_config(config_dict)
+#         sanitize_config(config_dict)
 
-    # Step 2: Rebuild model from sanitized config
-    print("Rebuilding model with sanitized layer names...")
-    focal_tversky_loss = custom_focal_tversky(num_classes=2)
-    custom_objects = {'multi_class_focal_tversky_loss': focal_tversky_loss}
-    model = model_from_json(json.dumps(config_dict), custom_objects=custom_objects)
+#     # Step 2: Rebuild model from sanitized config
+#     print("Rebuilding model with sanitized layer names...")
+#     focal_tversky_loss = custom_focal_tversky(num_classes=2)
+#     custom_objects = {'multi_class_focal_tversky_loss': focal_tversky_loss}
+#     model = model_from_json(json.dumps(config_dict), custom_objects=custom_objects)
 
-    # Step 3: Load weights manually
-    print("Loading weights...")
-    with h5py.File(model_path, 'r') as f:
-        model.load_weights(f)
+#     # Step 3: Load weights manually
+#     print("Loading weights...")
+#     with h5py.File(model_path, 'r') as f:
+#         model.load_weights(f)
 
-    # Step 4: Save sanitized model
-    print(f"Saving sanitized model to: {output_path}")
-    save_model(model, output_path, save_format='h5')
-    print("Sanitized model saved successfully.")
+#     # Step 4: Save sanitized model
+#     print(f"Saving sanitized model to: {output_path}")
+#     save_model(model, output_path, save_format='h5')
+#     print("Sanitized model saved successfully.")
 
-sanitize_layer_names(model_path, output_path)
+# sanitize_layer_names(model_path, output_path)
 
-evaluate(output_path, 'InsureValDataset', num_classes=2, batch_size=5, mean=np.array([0.485, 0.456, 0.406]), std=np.array([0.229, 0.224, 0.225]))
-test(output_path, test_dir, num_classes=2, num_images=16, max_num_images_per_line=4, mean=np.array([0.485, 0.456, 0.406]), std=np.array([0.229, 0.224, 0.225]))
+evaluate(model_path, 'InsureValDataset', num_classes=2, batch_size=5, mean=np.array([0.485, 0.456, 0.406]), std=np.array([0.229, 0.224, 0.225]))
+test(model_path, test_dir, num_classes=2, num_images=16, max_num_images_per_line=4, mean=np.array([0.485, 0.456, 0.406]), std=np.array([0.229, 0.224, 0.225]))
 
 end_time = datetime.now()
 print("End time:", end_time)
