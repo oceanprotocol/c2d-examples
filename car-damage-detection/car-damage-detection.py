@@ -29,7 +29,6 @@ models_urls = [
 ]
 
 tf.test.is_built_with_cuda()
-# SAVE_RESULTS_DIR = "/data/outputs/"
 SAVE_RESULTS_DIR = "./results"
 SAVE_PREDICTIONS_DIR = "/data/outputs/" # here will be /data/outputs
 # BACKBONE = 'DenseNet201'
