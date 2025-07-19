@@ -2,6 +2,7 @@ import io
 import os
 import json
 import zipfile
+import shutil
 from datetime import datetime
 from urllib.parse import urlparse, unquote
 
@@ -15,21 +16,22 @@ from keras.optimizers import *
 from keras.metrics import *
 from keras.models import load_model, model_from_json, save_model
 from keras.callbacks import ModelCheckpoint, CSVLogger
-from keras.src.applications.resnet import ResNet50
+# from keras.src.applications.resnet import ResNet50
 from keras_unet_collection.models import unet_2d as unet_2d
 import requests
 
 datasets_urls = [
-    "" # Define URLs for datasets
+    "*" # Define URLs here
 ]
 
 models_urls = [
-    "" # Define URLs for models
+    "*" # Define URLs here
 ]
 
 tf.test.is_built_with_cuda()
-SAVE_RESULTS_DIR = "/data/outputs/"
-# SAVE_RESULTS_DIR = "./results"
+# SAVE_RESULTS_DIR = "/data/outputs/"
+SAVE_RESULTS_DIR = "./results"
+SAVE_PREDICTIONS_DIR = "/data/outputs/" # here will be /data/outputs
 # BACKBONE = 'DenseNet201'
 BACKBONE = "ResNet50V2"
 LEARNING_RATE = 1e-3
@@ -42,7 +44,7 @@ def download_datasets():
         response = requests.get(url)
         print(response.status_code)
         if response.status_code == 200:
-            zip_filename = os.path.basename(urlparse(url).path)  # e.g. Kaggle%20Dataset.zip
+            zip_filename = os.path.basename(urlparse(url).path)
             decoded_name = unquote(zip_filename)
             folder_name = os.path.splitext(decoded_name)[0]
             with zipfile.ZipFile(io.BytesIO(response.content)) as zip_ref:
@@ -218,39 +220,27 @@ def init_model(input_shape=INPUT_SHAPE, num_classes=NUM_CLASSES, learning_rate=L
     model.compile(optimizer=optimizer, loss=loss, metrics=['accuracy', OneHotMeanIoU(num_classes=num_classes)])
     return model
 
-# def test(model_path, test_dir, num_classes, num_images=None, max_num_images_per_line=4, std=None, mean=None):
-#     model = load_model(model_path,
-#         custom_objects={'multi_class_focal_tversky_loss': custom_focal_tversky(num_classes=num_classes)
-#         })
-#
-#     images_paths = [os.path.join(test_dir, image_filename) for image_filename in os.listdir(test_dir)]
-#     num_images = num_images if num_images is not None and num_images < len(images_paths) else len(images_paths)
-#     images_paths = images_paths[:num_images]
-#
-#     resize = (model.input_shape[1], model.input_shape[2])
-#
-#     images = []
-#     masks = []
-#     for image_path in images_paths:
-#         if not image_path.endswith(('.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.gif')):
-#             continue
-#
-#         assert os.path.exists(image_path), f"The image path: {image_path} does not exist"
-#
-#         image = cv2.imread(image_path, cv2.IMREAD_COLOR)
-#         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-#         image = np.asarray(image, dtype=np.float32) / 255.0
-#         image = cv2.resize(image, resize, interpolation=cv2.INTER_NEAREST)
-#         image = np.asarray(image, dtype=np.float32)
-#
-#         if std is not None and mean is not None:
-#             image = (image - mean) / std
-#
-#         image = np.expand_dims(image, 0)
-#         pred = model.predict_on_batch(image)[0]
-#
-#         images.append(image[0])
-#         masks.append(pred)
+def zip_all(parent_dir, destination_dir):
+    os.makedirs(destination_dir, exist_ok=True)
+
+    for item in os.listdir(parent_dir):
+        item_path = os.path.join(parent_dir, item)
+        if os.path.isdir(item_path):
+            # Create ZIP file in temporary location (same as parent_dir)
+            zip_filename = f"{item}.zip"
+            temp_zip_path = os.path.join(parent_dir, zip_filename)
+
+            with zipfile.ZipFile(temp_zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                for root, dirs, files in os.walk(item_path):
+                    for file in files:
+                        abs_path = os.path.join(root, file)
+                        rel_path = os.path.relpath(abs_path, item_path)
+                        zipf.write(abs_path, os.path.join(item, rel_path))
+
+            # Move the zip file to the destination directory
+            final_path = os.path.join(destination_dir, zip_filename)
+            shutil.move(temp_zip_path, final_path)
+            print(f"Moved {zip_filename} → {final_path}")
 
 
 def test(model_path, test_dir, num_classes, num_images=None, max_num_images_per_line=4, std=None, mean=None):
@@ -267,6 +257,17 @@ def test(model_path, test_dir, num_classes, num_images=None, max_num_images_per_
     # Ensure output dir exists
     output_dir = SAVE_RESULTS_DIR + '/pred'
     os.makedirs(output_dir, exist_ok=True)
+
+    # Define a color map (can be expanded for more classes)
+    colormap = np.array([
+        [0, 0, 0],        # Class 0 - black
+        [0, 255, 0],      # Class 1 - green
+        [0, 0, 255],      # Class 2 - blue
+        [255, 0, 0],      # Class 3 - red
+        [255, 255, 0],    # Class 4 - yellow
+        [255, 0, 255],    # Class 5 - magenta
+        [0, 255, 255]     # Class 6 - cyan
+    ], dtype=np.uint8)
 
     for idx, image_path in enumerate(images_paths):
         if not image_path.endswith(('.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.gif')):
@@ -286,14 +287,40 @@ def test(model_path, test_dir, num_classes, num_images=None, max_num_images_per_
         pred = model.predict_on_batch(image_input)[0]
 
         # Get the predicted mask (argmax across classes)
-        pred_mask = np.argmax(pred, axis=-1).astype(np.uint8)
-        pred_mask = (pred_mask * 255).astype(np.uint8)  # scale for saving
+        # pred_mask = np.argmax(pred, axis=-1).astype(np.uint8)
+        # pred_mask = (pred_mask * 255).astype(np.uint8)  # scale for saving
 
-        # Save predicted mask image
-        base_filename = os.path.basename(image_path).split('.')[0]
-        output_path = os.path.join(output_dir, f"{base_filename}_pred.png")
-        cv2.imwrite(output_path, pred_mask)
-        print(f"Saved prediction to: {output_path}")
+        # # Save predicted mask image
+        # base_filename = os.path.basename(image_path).split('.')[0]
+        # output_path = os.path.join(output_dir, f"{base_filename}_pred.png")
+        # cv2.imwrite(output_path, pred_mask)
+        # print(f"Saved prediction to: {output_path}")
+        pred_mask = np.argmax(pred, axis=-1).astype(np.uint8)
+        pred_mask_resized = cv2.resize(pred_mask, (image.shape[1], image.shape[0]), interpolation=cv2.INTER_NEAREST)
+
+        # Create color mask using colormap
+        color_mask = colormap[pred_mask_resized % len(colormap)]
+
+        # Overlay the mask on the original image (BGR for OpenCV)
+        overlay = cv2.addWeighted(image, 0.7, color_mask, 0.3, 0)
+
+        # Save outputs
+        base_filename = os.path.splitext(os.path.basename(image_path))[0]
+        mask_path = os.path.join(output_dir + '/masks', f"{base_filename}_mask.png")
+        overlay_path = os.path.join(output_dir, f"{base_filename}_overlay.png")
+
+        cv2.imwrite(mask_path, color_mask)
+        cv2.imwrite(overlay_path, overlay)
+
+        print(f"Saved mask to: {mask_path}")
+        print(f"Saved overlay to: {overlay_path}")
+
+    # Zip all and save to /data/outputs -> scores, predictions and model
+    zip_all(
+        parent_dir=SAVE_RESULTS_DIR,
+        destination_dir=SAVE_PREDICTIONS_DIR
+    )
+
 
 def evaluate(model_path, test_dir, num_classes, batch_size=5, std=None, mean=None):
     print(f"Evaluate model... {model_path}")
@@ -336,7 +363,7 @@ BATCH_SIZE = 5
 print('Initiate generator v2...')
 generator = generator_v2(kaggle_path, batch_size=BATCH_SIZE, std=[0.229, 0.224, 0.225], mean=[0.485, 0.456, 0.406])
 
-EPOCHS = 7
+EPOCHS = 1
 STEPS_PER_EPOCH = len(os.listdir(os.path.join(kaggle_path, 'images'))) // BATCH_SIZE
 
 save_format = 'h5'
@@ -359,55 +386,12 @@ test_dir = 'InsureValDataset/images'
 # model_path = os.path.join(os.path.join(SAVE_RESULTS_DIR, 'models'), 'kaggle_model.h5')
 
 
-# print("Model converted and saved as kaggle_model.keras")
 model_path = os.path.join('.', 'kaggle_model.h5')
 print(f"model_path: {model_path}")
 assert os.path.exists(model_path), "Model not found at path!"
-# output_path = os.path.join('.', 'ouput_model.h5')
 
 
 print(f"Testing model: {model_path}")
-
-# def sanitize_layer_names(model_path, output_path):
-#         # Step 1: Read and sanitize model config
-#     with h5py.File(model_path, 'r') as f:
-#         if 'model_config' not in f.attrs:
-#             raise ValueError("model_config not found in HDF5 file.")
-
-#         raw_config = f.attrs['model_config']
-#         config_dict = json.loads(raw_config)
-
-#         # Recursively sanitize layer names
-#         def sanitize_config(obj):
-#             if isinstance(obj, dict):
-#                 for k, v in obj.items():
-#                     if k == 'name' and isinstance(v, str) and '/' in v:
-#                         obj[k] = v.replace('/', '_')
-#                     else:
-#                         sanitize_config(v)
-#             elif isinstance(obj, list):
-#                 for item in obj:
-#                     sanitize_config(item)
-
-#         sanitize_config(config_dict)
-
-#     # Step 2: Rebuild model from sanitized config
-#     print("Rebuilding model with sanitized layer names...")
-#     focal_tversky_loss = custom_focal_tversky(num_classes=2)
-#     custom_objects = {'multi_class_focal_tversky_loss': focal_tversky_loss}
-#     model = model_from_json(json.dumps(config_dict), custom_objects=custom_objects)
-
-#     # Step 3: Load weights manually
-#     print("Loading weights...")
-#     with h5py.File(model_path, 'r') as f:
-#         model.load_weights(f)
-
-#     # Step 4: Save sanitized model
-#     print(f"Saving sanitized model to: {output_path}")
-#     save_model(model, output_path, save_format='h5')
-#     print("Sanitized model saved successfully.")
-
-# sanitize_layer_names(model_path, output_path)
 
 evaluate(model_path, 'InsureValDataset', num_classes=2, batch_size=5, mean=np.array([0.485, 0.456, 0.406]), std=np.array([0.229, 0.224, 0.225]))
 test(model_path, test_dir, num_classes=2, num_images=16, max_num_images_per_line=4, mean=np.array([0.485, 0.456, 0.406]), std=np.array([0.229, 0.224, 0.225]))
