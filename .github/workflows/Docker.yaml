@@ -97,8 +97,9 @@ jobs:
           # generate Docker tags based on the following events/attributes
           # we only build main branch and PRs
           tags: |
-            type=ref,event=branch,value=${{ steps.process_tag.outputs.processed_tag }}
-            type=ref,event=pr,suffix=${{ matrix.component.tag }}
+            type=ref,event=pr,suffix=${{ matrix.component.tag }},
+            type=raw,value=${{ steps.process_tag.outputs.processed_tag }}
+            
           # type=semver,pattern={{major}}.{{minor}}
           # type=semver,pattern={{major}}
           # type=sha
