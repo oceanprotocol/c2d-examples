@@ -119,8 +119,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           builder: ${{ steps.buildx.outputs.name }}
-          context: .
-          build-contexts: ${{ matrix.component.folder }}
+          context: ${{ matrix.component.folder }}
           platforms: ${{ matrix.platform }}
           push: true
           tags: ${{ steps.image_tags.outputs.dockerhub }}
@@ -131,8 +130,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           builder: ${{ steps.buildx.outputs.name }}
-          context: .
-          file: ${{ matrix.component.file }}
+          context: ${{ matrix.component.folder }}
           platforms: ${{ matrix.platform }}
           push: true
           tags: ${{ steps.image_tags.outputs.ghcr }}
