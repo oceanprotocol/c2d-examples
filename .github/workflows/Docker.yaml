@@ -26,23 +26,23 @@ jobs:
         # we keep this just in case we need to change
         platform: ${{ github.event_name == 'pull_request' && fromJSON('["linux/amd64"]') || fromJSON('["linux/amd64"]') }}
         component:
-          - folder: "/car-damage-detection"
+          - folder: "./car-damage-detection"
             tag: "-car-damage-detection"
-          - folder: "/js-general"
+          - folder: "./js-general"
             tag: "-js-general"
-          - folder: "/node-vibrant"
+          - folder: "./node-vibrant"
             tag: "-node-vibrant"
-          - folder: "/py-general"
+          - folder: "./py-general"
             tag: "-py-general"
-          - folder: "/py-lite"
+          - folder: "./py-lite"
             tag: "-py-lite"
-          - folder: "/branin_and_gpr"
+          - folder: "./branin_and_gpr"
             tag: "-branin_and_gpr"
-          - folder: "/python-cpumemtest"
+          - folder: "./python-cpumemtest"
             tag: "-python-cpumemtest"
-          - folder: "/py-panda"
+          - folder: "./py-panda"
             tag: "-py-panda"
-          - folder: "/py-sql"
+          - folder: "./py-sql"
             tag: "-py-sql"
     steps:
       - name: Checkout
