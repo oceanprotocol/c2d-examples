@@ -27,23 +27,23 @@ jobs:
         platform: ${{ github.event_name == 'pull_request' && fromJSON('["linux/amd64"]') || fromJSON('["linux/amd64"]') }}
         component:
           - folder: "/car-damage-detection"
-            tag: "car-damage-detection"
+            tag: "-car-damage-detection"
           - folder: "/js-general"
-            tag: "js-general"
+            tag: "-js-general"
           - folder: "/node-vibrant"
-            tag: "node-vibrant"
+            tag: "-node-vibrant"
           - folder: "/py-general"
-            tag: "py-general"
+            tag: "-py-general"
           - folder: "/py-lite"
-            tag: "py-lite"
+            tag: "-py-lite"
           - folder: "/branin_and_gpr"
-            tag: "branin_and_gpr"
+            tag: "-branin_and_gpr"
           - folder: "/python-cpumemtest"
-            tag: "python-cpumemtest"
+            tag: "-python-cpumemtest"
           - folder: "/py-panda"
-            tag: "py-panda"
+            tag: "-py-panda"
           - folder: "/py-sql"
-            tag: "py-sql"
+            tag: "-py-sql"
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -81,6 +81,12 @@ jobs:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GHCR_PUSH_TOKEN }}
+      - name: Process tag
+        id: process_tag
+        run: |
+          TAG="${{ matrix.component.tag }}"
+          PROCESSED_TAG="${TAG:1}"
+          echo "processed_tag=${PROCESSED_TAG}" >> $GITHUB_OUTPUT
       - name: Set Docker metadata
         id: ocean_node_meta
         uses: docker/metadata-action@v5
@@ -91,7 +97,7 @@ jobs:
           # generate Docker tags based on the following events/attributes
           # we only build main branch and PRs
           tags: |
-            type=ref,event=branch,value=${{ matrix.component.tag }}
+            type=ref,event=branch,value=${{ steps.process_tag.outputs.processed_tag }}
             type=ref,event=pr,suffix=${{ matrix.component.tag }}
           # type=semver,pattern={{major}}.{{minor}}
           # type=semver,pattern={{major}}
